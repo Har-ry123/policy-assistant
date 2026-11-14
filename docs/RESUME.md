@@ -6,7 +6,7 @@ Only claim what you did and measured. The `[...]` values are placeholders: run `
 
 **Company Policy Assistant** | Python, Groq, Qdrant, LangGraph, LangChain, FastAPI, Docker | [GitHub link]
 
-- Built a retrieval-augmented assistant that answers policy questions with cited sources and refuses out-of-scope requests (`I don't know`), using Qdrant with HNSW and role-based payload filtering.
+- Built a retrieval-augmented assistant that answers policy questions with cited sources and refuses out-of-scope requests (a polite "couldn't find that" reply), using Qdrant with HNSW and role-based payload filtering.
 - Implemented hybrid retrieval (vector + BM25 with reciprocal rank fusion) and reranking; created a 71-question golden dataset over 20 documents and an evaluation harness reporting hit rate, precision, recall, MRR, faithfulness and correctness; hybrid search reached precision@3 of 0.72 versus 0.61 for keyword-only and 0.68 for vector search, with answer correctness of 0.91 (measured; re-score before quoting a newer number).
 - Designed a LangGraph agent with a compliance-review step, validated Pydantic tool arguments, a tool allowlist and human approval (`interrupt`) before any leave request is submitted.
 - Added guardrails and security tests (prompt injection, PII redaction, cross-role data leakage, forbidden tools): 56 automated tests run on every push (GitHub Actions workflow included).

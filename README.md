@@ -46,7 +46,7 @@ python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q               # 56 tests
+python -m pytest -q               # 63 tests
 python -m app.cli "How many days of annual leave do I get?" --trace
 python -m app.cli "What is the salary band for level 3?" --roles hr
 python -m eval.run_eval           # writes eval/results.md
@@ -172,7 +172,8 @@ Two real bugs were found this way and fixed: some models write citations as `【
 
 * Restricted documents (`access: hr`, `access: engineering`) are filtered **inside retrieval**, so the LLM never sees them for an unauthorised user. Tested for every retrieval mode.
 * Inputs: length limits, prompt-injection phrase check, PII redaction before the prompt. These are weak layers by design; the strong layers are access control, a tool allowlist, validated arguments and human approval for risky actions.
-* Outputs must cite a real source or admit ignorance; PII is redacted again.
+* Also blocked: attempts to make the assistant repeat its instructions or dump the passages it was given; questions not written in English get a clear "please ask in English" reply (the search models only understand English); messages about self-harm get a caring reply with the counselling line instead of a policy lookup.
+* Outputs must cite a real source or say "Sorry, I couldn't find that in the company policies. Please ask HR or your manager."; PII is redacted again.
 * The role header in `app/api.py` is a demo. In production derive roles from a verified identity token.
 
 ## Deployment
@@ -188,11 +189,14 @@ docker compose up --build
 
 ## What was and was not verified
 
-Verified here: all 56 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
+Verified here: all 63 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
 
 **Not run:** a real Qdrant server (the project uses Qdrant in memory), Docker / docker compose, the neural cross-encoder reranker, and the MCP server (it needs `pip install mcp` and a host). Test those in your environment before depending on them.
 
 ## Limitations and next steps
+
+* Wild-question test (about 110 odd questions: typos, slang, other languages, attacks, role spoofing, off-topic, vague follow-ups): no restricted text leaked. It found and fixed five problems: misspellings, a wrong answer to a French question, prompt-leak requests, a cold reply to a self-harm message, and a wrong Diwali answer (the holiday file now names each holiday). About 30 questions of that set were not run because the free Groq quota ran out, and the fixes after that point (synonym search, summarising broad questions) were checked on retrieval only, not re-answered by the model.
+* Answers can differ between models: for example "Can I work from Bali for a month?" is answered by `gpt-oss-120b` but refused by `gpt-oss-20b`. Refusing is the safe direction; a few answers (for example whether a coffee can be expensed) go slightly beyond what the policy says.
 
 * Small corpus (20 documents, 71 questions): good for comparing methods, not for claiming production accuracy. Add real documents and more adversarial questions.
 * The offline embedder and reranker are lexical baselines and miss synonyms: "What is the daily meal limit abroad?" says it could not find the answer because the policy says "international". This is exactly the gap real embeddings (`EMBEDDER=minilm`) close, and a good case to add to the golden dataset.
