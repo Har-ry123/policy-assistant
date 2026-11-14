@@ -73,3 +73,29 @@ def test_tool_allowlist_and_approval():
     with pytest.raises(ValueError):
         reg.run("submit_leave_request", {"employee": "asha", "days": 500}, approved=True)
     assert reg.run("submit_leave_request", {"employee": "asha", "days": 2}, approved=True)["status"] == "submitted"
+
+
+def test_alternative_citation_styles_and_special_spaces_are_normalised():
+    from app.guardrails import clean_model_text
+    narrow = chr(0x202f)
+    fancy = f"The core hours are{narrow}10:00{narrow}to{narrow}16:00 local time" + chr(0x3010) + "1" + chr(0x3011) + "."
+    res = check_output(fancy, 4)
+    assert res.allowed and "[1]" in res.text and narrow not in res.text
+    assert clean_model_text("Wi" + chr(0x2011) + "Fi" + chr(0xa0) + "only") == "Wi-Fi only"
+    assert check_output("A fancy answer" + chr(0x3010) + "7" + chr(0x3011), 2).allowed is False   # invalid source number is still rejected
+
+
+def test_company_contact_details_from_the_documents_are_kept_but_other_pii_is_hidden():
+    from app.guardrails import pii_in
+    source = "Call the Ethics Hotline at 1800-555-0199 or write to security@acme.example."
+    keep = pii_in(source)
+    assert {"1800-555-0199", "security@acme.example"} <= keep
+    shown = check_output("Call 1800-555-0199 or mail security@acme.example [1]", 1, keep).text
+    assert "1800-555-0199" in shown and "security@acme.example" in shown
+    hidden = check_output("Mail someone@else.org or call 1800-555-0199 [1]", 1).text      # nothing kept
+    assert "[EMAIL]" in hidden and "[PHONE]" in hidden
+
+
+def test_pipeline_keeps_the_hotline_number_from_the_policy(pipeline):
+    ans = pipeline.ask("What is the anonymous Ethics Hotline number for reporting concerns?")
+    assert "1800-555-0199" in ans.answer

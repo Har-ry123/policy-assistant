@@ -14,7 +14,7 @@ MAX_QUESTION_CHARS = 500
 REFUSAL = "I can't help with that request."
 
 PII_PATTERNS = {
-    "EMAIL": re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
+    "EMAIL": re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"),   # does not swallow a trailing full stop
     "CARD": re.compile(r"\b(?:\d[ -]?){13,16}\b"),   # before PHONE so cards are not mislabelled
     "PHONE": re.compile(r"\+?\d[\d\s().-]{8,}\d"),
 }
@@ -38,10 +38,18 @@ class GuardResult:
     reason: str = ""
 
 
-def redact(text: str) -> str:
+def redact(text: str, keep=()) -> str:
+    """Hide personal data. Values listed in ``keep`` (for example a company phone number that
+    comes from the policy documents) are left alone."""
+    keep = set(keep)
     for label, pattern in PII_PATTERNS.items():
-        text = pattern.sub(f"[{label}]", text)
+        text = pattern.sub(lambda m, label=label: m.group(0) if m.group(0) in keep else f"[{label}]", text)
     return text
+
+
+def pii_in(text: str) -> set:
+    """All email / phone / card-like strings found in a piece of text."""
+    return {m.group(0) for pattern in PII_PATTERNS.values() for m in pattern.finditer(text)}
 
 
 def looks_like_injection(text: str) -> bool:
@@ -59,9 +67,17 @@ def check_input(text: str) -> GuardResult:
     return GuardResult(True, redact(text))
 
 
-def check_output(answer: str, n_sources: int) -> GuardResult:
+def clean_model_text(text: str) -> str:
+    """Normalise what different models emit: full-width citation brackets and invisible special spaces."""
+    text = re.sub(r"【\s*(\d+)\s*】", r"[\1]", text)   # [1] written in full-width brackets
+    for bad, good in ((" ", " "), (" ", " "), ("‑", "-"), ("‐", "-")):
+        text = text.replace(bad, good)
+    return text
+
+
+def check_output(answer: str, n_sources: int, keep=()) -> GuardResult:
     """A grounded answer must cite a real source, or admit it does not know."""
-    answer = redact(answer.strip())
+    answer = redact(clean_model_text(answer).strip(), keep)
     if answer.startswith(IDK):
         return GuardResult(True, answer)
     cited = [int(n) for n in _CITATION.findall(answer)]

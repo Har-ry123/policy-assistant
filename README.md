@@ -42,7 +42,7 @@ python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q               # 51 tests
+python -m pytest -q               # 54 tests
 python -m app.cli "How many days of annual leave do I get?" --trace
 python -m app.cli "What is the salary band for level 3?" --roles hr
 python -m eval.run_eval           # writes eval/results.md
@@ -126,6 +126,14 @@ Of the 27 answerable questions with the word-based embedder, 3 failed in every m
 
 **Read these honestly.** The corpus is tiny (9 documents), so all modes score near the ceiling and the differences are within noise; the lexical reranker even lost one case. The point of the harness is the method: change one thing, re-run, compare. To see real differences, add many more documents and harder paraphrased questions, switch to `EMBEDDER=minilm`, and re-run. Answer metrics (correctness, faithfulness, refusal accuracy, leak rate) are in `eval/results.md`; faithfulness there is a cheap word-overlap proxy, not an LLM judge.
 
+### Smoke test against a running server
+
+`python -m eval.smoke_check 8000` asks about 40 questions (normal, reworded, role-restricted, attacks, out of scope, PII) and runs the leave-request flows (approve, reject, invalid, injected). Last run with the real model `openai/gpt-oss-120b`: 56 of 57 checks passed. The one miss, "Can I fly business class?", is a model-consistency issue: search finds the right passage every time, but the model sometimes answers "I don't know" even at temperature 0. The same 41 questions were also typed into the website itself and all gave correct answers.
+
+Two real bugs were found this way and fixed: some models write citations as `【1】` instead of `[1]` (the output check then wrongly replaced good answers with "I don't know"; citations and invisible special spaces are now normalised), and the privacy filter was hiding the company's own contact details (hotline number, security email) from answers (details that appear in the policy documents are now kept; other personal data is still hidden). The prompt also gained two lines (everyday wording such as "abroad" means "international"; placeholders like `[EMAIL]` should be ignored). **Those last prompt changes were checked with the 120b model only: the daily free token limit of `openai/gpt-oss-20b` was used up, so re-run `python -m eval.run_eval` once your quota resets before quoting new evaluation numbers.**
+
+**Groq free-tier note:** each model has a daily token limit. If the site shows "The model service is unavailable", you have probably hit it; wait for the reset or set `MODEL=openai/gpt-oss-120b` in `.env` (models have separate limits).
+
 ## Security
 
 * Restricted documents (`access: hr`, `access: engineering`) are filtered **inside retrieval**, so the LLM never sees them for an unauthorised user. Tested for every retrieval mode.
@@ -146,7 +154,7 @@ docker compose up --build
 
 ## What was and was not verified
 
-Verified here: all 51 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
+Verified here: all 54 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
 
 **Not run:** a real Qdrant server (the project uses Qdrant in memory), Docker / docker compose, the neural cross-encoder reranker, and the MCP server (it needs `pip install mcp` and a host). Test those in your environment before depending on them.
 

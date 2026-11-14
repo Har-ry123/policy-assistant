@@ -11,7 +11,7 @@ from .bm25 import BM25
 from .chunking import chunk_all, load_documents
 from .config import Settings
 from .embeddings import get_embedder
-from .guardrails import REFUSAL, check_input, check_output
+from .guardrails import REFUSAL, check_input, check_output, pii_in
 from .llm import IDK, SYSTEM_PROMPT, FakeLLM, GroqLLM
 from .rerank import get_reranker
 from .retrieval import Hit, Retriever
@@ -70,7 +70,7 @@ class RAGPipeline:
             span["prompt_tokens"], span["completion_tokens"] = result.prompt_tokens, result.completion_tokens
 
         with trace.span("guard_output") as span:
-            out = check_output(result.text, len(hits))
+            out = check_output(result.text, len(hits), keep=set().union(*(pii_in(h.chunk.text) for h in hits)))
             span["ok"] = out.allowed
         usage = {
             "prompt_tokens": result.prompt_tokens, "completion_tokens": result.completion_tokens,

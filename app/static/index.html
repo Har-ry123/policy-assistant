@@ -126,10 +126,21 @@
     $('chips').appendChild(b);
   });
 
+  function setRich(node, text){
+    // shows **bold** as bold using DOM text nodes only (model text is never parsed as HTML)
+    String(text).split('**').forEach((part, i) => {
+      if (!part) return;
+      if (i % 2){ const b = document.createElement('strong'); b.textContent = part; node.appendChild(b); }
+      else node.appendChild(document.createTextNode(part));
+    });
+  }
   function add(cls, text){
     const d = document.createElement('div');
     d.className = 'msg ' + cls;
-    d.textContent = text;
+    const span = document.createElement('span');
+    span.className = 'answer';
+    if (cls.indexOf('bot') === 0) setRich(span, text); else span.textContent = text;
+    d.appendChild(span);
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
     return d;
