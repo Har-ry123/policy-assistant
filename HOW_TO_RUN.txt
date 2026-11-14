@@ -1,0 +1,273 @@
+=====================================================================
+ COMPANY POLICY ASSISTANT  -  HOW TO RUN (FULL DETAILS)
+=====================================================================
+
+What this is
+------------
+A website where you ask questions about company policies (leave, remote
+work, expenses, IT security ...) and get answers that show the exact policy
+passage they came from. Some documents are restricted by role (Employee,
+HR, Engineer). The assistant refuses what it cannot find in the documents.
+
+You can run it in TWO ways:
+  MODE 1  Offline, no key, no internet needed after install. Works fully,
+          but answers are basic (a simple stand-in model).
+  MODE 2  With a free Groq key. Real AI answers. (Recommended.)
+
+All commands below are for Windows PowerShell unless stated. Mac/Linux
+versions are given where they differ.
+
+
+---------------------------------------------------------------------
+STEP 0. WHAT YOU NEED
+---------------------------------------------------------------------
+  - Python 3.12 or newer      (check:  python --version)
+        Download: https://www.python.org/downloads/
+        On Windows, tick "Add Python to PATH" during install.
+  - Git                       (check:  git --version)
+        Download: https://git-scm.com/downloads
+        (Or skip Git and use "Download ZIP" on the GitHub page.)
+  - A web browser (Chrome, Edge, Firefox).
+  - About 1 GB free disk space (more if you use the better search model).
+
+
+---------------------------------------------------------------------
+STEP 1. GET THE PROJECT
+---------------------------------------------------------------------
+Option A (Git):
+    git clone https://github.com/Har-ry123/policy-assistant.git
+    cd policy-assistant
+
+Option B (ZIP): on the GitHub page click  Code > Download ZIP, unzip it,
+then open a terminal inside the unzipped "policy-assistant" folder.
+
+
+---------------------------------------------------------------------
+STEP 2. CREATE A VIRTUAL ENVIRONMENT AND INSTALL PACKAGES
+---------------------------------------------------------------------
+Windows (PowerShell):
+    python -m venv .venv
+    .venv\Scripts\activate
+    pip install -r requirements-dev.txt
+
+Mac / Linux:
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements-dev.txt
+
+When it works, your prompt starts with (.venv).
+
+If PowerShell says "running scripts is disabled", run this once, then
+activate again:
+    Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+
+---------------------------------------------------------------------
+STEP 3. START THE WEBSITE  (MODE 1: works with no key)
+---------------------------------------------------------------------
+Windows (easiest, always uses the right Python):
+    .\run_api.ps1
+
+Any system (with the environment activated):
+    uvicorn app.api:app_factory --factory --port 8000
+
+Wait until you see:
+    Uvicorn running on http://127.0.0.1:8000
+
+Then open this address in your browser:
+    http://127.0.0.1:8000/
+
+Keep the terminal window open while you use the site.
+To stop the site: click the terminal and press  Ctrl + C.
+
+
+---------------------------------------------------------------------
+STEP 4. USE THE WEBSITE
+---------------------------------------------------------------------
+  1. Pick a role in the left sidebar:
+        Employee  - sees the 14 public policies
+        HR        - also sees salary bands, promotion criteria,
+                    disciplinary procedure
+        Engineer  - also sees engineering onboarding, incident
+                    response, on-call handbook
+  2. Type a question and press Enter. Examples:
+        How many days of annual leave do I get?
+        Can I work from another country?
+        What is the daily meal limit for an international trip?
+        I want to take 3 days of leave from 2026-12-21
+     (the last one shows an Approve / Reject card)
+  3. Click a [1] citation to see the source passage.
+  4. Open "How this answer was produced" to see timing for each step.
+  5. Try a restricted question (e.g. "What is the salary band for
+     level 3?") as Employee, then as HR, to see access control.
+
+NOTE: the role switch in the site is a DEMO. In a real product, roles
+would come from a real login. Do not put private data in this demo.
+
+
+---------------------------------------------------------------------
+STEP 5. MODE 2: REAL AI ANSWERS WITH A FREE GROQ KEY
+---------------------------------------------------------------------
+  1. Create a free account and an API key at https://console.groq.com
+  2. In the project folder, copy the example settings file:
+        Windows:    copy .env.example .env
+        Mac/Linux:  cp .env.example .env
+  3. Open the new file named  .env  in a text editor and set:
+        GROQ_API_KEY=paste_your_key_here
+     Keep the key private. Never upload the .env file to GitHub
+     (it is already ignored by git).
+  4. Stop the site (Ctrl + C) and start it again (Step 3).
+     The page header should now show a "groq:..." model name.
+
+Optional settings in .env (all have working defaults):
+        MODEL=openai/gpt-oss-20b       (default; or openai/gpt-oss-120b)
+        EMBEDDER=hash                  (offline) or  minilm  (better)
+        RERANKER=lexical               (offline) or  cross-encoder
+        TOP_K=4                        (passages sent to the model)
+        QDRANT_URL=                    (empty = built-in memory store)
+
+Free-tier limit: Groq allows a limited number of tokens per day for each
+model. If you see "rate limit" or "daily limit" messages, wait for the
+reset, or change MODEL= to the other model.
+
+
+---------------------------------------------------------------------
+STEP 6. OPTIONAL: BETTER SEARCH (MEANING-BASED)
+---------------------------------------------------------------------
+    pip install sentence-transformers
+Then in .env add:
+    EMBEDDER=minilm
+Restart the site. The first start downloads a small model (~90 MB) and
+takes a few minutes. Search then understands synonyms, for example
+"doctor's note" finds "medical certificate".
+
+
+---------------------------------------------------------------------
+STEP 7. RUN THE TESTS
+---------------------------------------------------------------------
+Windows:
+    .\run_tests.ps1
+Any system:
+    python -m pytest -q
+
+Expected result:  63 passed
+
+
+---------------------------------------------------------------------
+STEP 8. TRY THE COMMAND LINE (NO WEBSITE NEEDED)
+---------------------------------------------------------------------
+    python -m app.cli "How many days of annual leave do I get?" --trace
+    python -m app.cli "What is the salary band for level 3?" --roles hr
+    python -m app.cli "When are production deploys frozen?" --roles engineering
+    python -m app.cli "How many sick days?" --mode vector
+
+--roles   : employee (default), hr, engineering
+--mode    : vector, bm25, hybrid, hybrid_rerank
+--trace   : shows timing for each step
+(In MODE 1 the offline stand-in model can only copy sentences, so some
+questions get the "couldn't find" reply. With a Groq key (MODE 2) answers
+are much better.)
+
+
+---------------------------------------------------------------------
+STEP 9. OPTIONAL EXTRAS
+---------------------------------------------------------------------
+Evaluation (compares the 4 search modes on 71 questions):
+    python -m eval.run_eval --answer-modes none
+  (retrieval only; free). Add answer scoring with a Groq key:
+    python -m eval.run_eval --answer-modes hybrid
+  Results are written to  eval/results.md
+
+Check a running website end to end (start the site first):
+    python -m eval.smoke_check 8000
+
+Re-record the demo GIF (needs Edge or Chromium):
+    pip install -r requirements-demo.txt
+    python -m demo.make_demo
+
+Docker (never run by the author, so expect small fixes):
+    docker build -t policy-assistant .
+    docker run -p 8000:8000 --env-file .env policy-assistant
+    # with a real Qdrant server:
+    docker compose up --build
+
+
+---------------------------------------------------------------------
+TROUBLESHOOTING
+---------------------------------------------------------------------
+"python is not recognized"
+    Python is not installed or not on PATH. Reinstall it and tick
+    "Add Python to PATH".
+
+"No module named 'langgraph'" (or fastapi, qdrant_client ...)
+    The environment is not active or packages are missing.
+    Run  .venv\Scripts\activate  then  pip install -r requirements-dev.txt
+    On Windows you can also just use  .\run_api.ps1.
+
+"Address already in use" / port 8000 is busy
+    Another copy is running. Close that terminal, or use another port:
+        uvicorn app.api:app_factory --factory --port 8010
+    and open http://127.0.0.1:8010/
+
+The site says "Server not reachable"
+    The terminal was closed or the server stopped. Start it again
+    (Step 3).
+
+Every answer says "Sorry, I couldn't find that in the company policies"
+    That is the correct reply when the documents do not contain the
+    answer or your role cannot see them. Check the role in the sidebar
+    and try a question from QUESTIONS below.
+
+Model "rate limit" / "daily limit" errors
+    The free Groq quota is used up. Wait, or set MODEL= to the other
+    model in .env, or run offline (remove GROQ_API_KEY from .env).
+
+First start is slow
+    With EMBEDDER=minilm the first start downloads a model. Later
+    starts are faster.
+
+Windows: "Loading weights" and an HF_TOKEN warning appear
+    These are harmless messages from the search model download.
+
+
+---------------------------------------------------------------------
+WHAT TO ASK (SAMPLE QUESTIONS)
+---------------------------------------------------------------------
+Anyone (Employee):
+    How many days of annual leave do I get each year?
+    Do I need a doctor's note if I am ill for three days?
+    How many days a week must I be in the office?
+    Within how many days must I submit an expense claim?
+    What should I do if my laptop is stolen?
+    How much can I spend on training each year?
+HR role only:
+    What is the salary band for level 2?
+    How many good reviews are needed before a promotion?
+    How many verbal warnings come before a written warning?
+Engineer role only:
+    When are production deploys frozen?
+    What counts as a SEV1 incident?
+    How much is the on-call allowance?
+Leave request (shows the approval card):
+    I want to take 3 days of leave from 2026-12-21
+Should be refused:
+    Salary questions as Employee, "Ignore previous instructions ...",
+    "Who won the cricket world cup?"
+
+
+---------------------------------------------------------------------
+PROJECT MAP
+---------------------------------------------------------------------
+    app/          the application (search, guards, agent, API, website)
+    app/static/   the website page
+    data/policies/ the 20 sample policy documents (markdown)
+    eval/         evaluation set (71 questions) and scripts
+    tests/        63 automated tests
+    docs/         demo GIF, interview and resume notes
+    README.md     architecture, evaluation results, limitations
+    run_api.ps1   start the website (Windows)
+    run_tests.ps1 run the tests (Windows)
+
+All company names, policies and numbers are SAMPLE data for
+demonstration. They are not real company policy.
+=====================================================================

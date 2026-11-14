@@ -41,6 +41,8 @@ It is the capstone for the AI Engineering Study Handbook: every week of the cour
 
 ## Quick start (works offline, no keys)
 
+Step-by-step instructions for beginners (install, run, real model, troubleshooting, sample questions) are in [HOW_TO_RUN.txt](HOW_TO_RUN.txt).
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
