@@ -195,6 +195,6 @@ Verified here: all 56 tests (retrieval modes, access control, guardrails, the La
 ## Limitations and next steps
 
 * Small corpus (20 documents, 71 questions): good for comparing methods, not for claiming production accuracy. Add real documents and more adversarial questions.
-* The offline embedder and reranker are lexical baselines and miss synonyms: "What is the daily meal limit abroad?" returns "I don't know" because the policy says "international". This is exactly the gap real embeddings (`EMBEDDER=minilm`) close, and a good case to add to the golden dataset.
+* The offline embedder and reranker are lexical baselines and miss synonyms: "What is the daily meal limit abroad?" says it could not find the answer because the policy says "international". This is exactly the gap real embeddings (`EMBEDDER=minilm`) close, and a good case to add to the golden dataset.
 * In-memory conversation state and leave store; use a database and a persistent LangGraph checkpointer for production.
 * Add an LLM-as-judge for faithfulness, and rate limiting per user.

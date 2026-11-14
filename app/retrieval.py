@@ -5,6 +5,8 @@ chunks may be retrieved at all (Week 7: never rely on the model to hide restrict
 """
 from __future__ import annotations
 
+import difflib
+import re
 from dataclasses import dataclass
 
 from .bm25 import BM25
@@ -38,6 +40,29 @@ class Retriever:
         self.by_id = {c.chunk_id: c for c in chunks}
         self.chunks, self.store, self.bm25, self.reranker = chunks, store, bm25, reranker
         self.candidate_k = candidate_k
+        self.vocab = {w for c in chunks for w in re.findall(r"[a-z]{5,}", c.text.lower())}
+
+    def fix_typos(self, question: str) -> str:
+        """Repair obvious misspellings ("annul" -> "annual") using words from the policies themselves.
+        Only long words with a very close match are changed, so ordinary words are left alone."""
+        def repair(m: re.Match) -> str:
+            w = m.group(0)
+            lw = w.lower()
+            if len(lw) < 5 or lw in self.vocab:
+                return w
+            near = [v for v in difflib.get_close_matches(lw, self.vocab, n=1, cutoff=0.84) if v[0] == lw[0]]
+            return near[0] if near else w
+        return re.sub(r"[A-Za-z]+", repair, question)
+
+    SYNONYMS = {"reimburs": "claim paid", "wfh": "work from home", "pto": "annual leave", "vacation": "annual leave",
+                "resign": "notice period", "quit": "resign notice period", "doctor": "medical certificate sick",
+                "abroad": "international", "overseas": "international", "payday": "salary paid"}
+
+    def expand(self, question: str) -> str:
+        """Add the policy's own wording for everyday words ("reimbursed" -> "claim paid") so the right passage is found."""
+        low = question.lower()
+        extra = [add for key, add in self.SYNONYMS.items() if key in low]
+        return question + (" " + " ".join(extra) if extra else "")
 
     def search(self, query: str, mode: str = "hybrid_rerank", roles=(), k: int = 4) -> list[Hit]:
         if mode not in MODES:

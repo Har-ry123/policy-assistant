@@ -26,8 +26,19 @@ INJECTION_PATTERNS = [
         r"\byou are now\b",
         r"\bdeveloper mode\b",
         r"act as .{0,40}(without|no) (restrictions|rules|limits)",
+        r"(repeat|print|show|reveal|dump|output|list) .{0,30}(text|words|everything|instructions?|prompt) (above|before)",
+        r"(print|show|reveal|dump|output|repeat) .{0,30}(all )?(the )?(passages|context|instructions)( you (were|are) given)?\b.{0,20}(verbatim|word for word|exactly)?",
+        r"\bverbatim\b",
+        r"(forget|drop) (everything|all) .{0,30}(told|instructions|rules)",
+        r"\bjailbreak\b|(?-i:\bDAN\b)",
     )
 ]
+SELF_HARM = re.compile(
+    r"\b(hurt|harm|kill)(ing)? my ?self\b|\bsuicid|\bend (my|this) life\b|\bwant to die\b|\bself[- ]harm\b", re.I)
+ENGLISH_ONLY = "Sorry, I can only answer questions written in English. Please ask your question in English."
+SUPPORT = ("I'm really sorry you're going through this, and you don't have to face it alone. If you are in danger, "
+           "please call your local emergency number now. Acme also offers 6 free confidential counselling sessions a year "
+           "(call 1800-555-0142), and you can talk to HR or your manager.")
 _CITATION = re.compile(r"\[(\d+)\]")
 
 
@@ -68,8 +79,12 @@ def check_input(text: str) -> GuardResult:
         return GuardResult(False, text, "question too short")
     if len(text) > MAX_QUESTION_CHARS:
         return GuardResult(False, text, "question too long")
+    if SELF_HARM.search(text):
+        return GuardResult(False, SUPPORT, "sensitive")
     if looks_like_injection(text):
         return GuardResult(False, text, "possible prompt injection")
+    if any(ch.isalpha() and ord(ch) > 127 for ch in text):   # the search models only understand English
+        return GuardResult(False, ENGLISH_ONLY, "not english")
     return GuardResult(True, redact(text))
 
 

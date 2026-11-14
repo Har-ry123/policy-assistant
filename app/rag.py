@@ -54,10 +54,12 @@ class RAGPipeline:
             span["allowed"] = guard.allowed
         if not guard.allowed:
             trace.log()
-            return Answer(REFUSAL, blocked=True, reason=guard.reason, mode=mode, trace=trace.to_dict())
+            message = guard.text if guard.reason in ("sensitive", "not english") else REFUSAL
+            return Answer(message, blocked=True, reason=guard.reason, mode=mode, trace=trace.to_dict())
+        guard.text = self.retriever.fix_typos(guard.text)
 
         with trace.span("retrieve", mode=mode) as span:
-            hits = self.retriever.search(guard.text, mode=mode, roles=roles, k=self.top_k)
+            hits = self.retriever.search(self.retriever.expand(guard.text), mode=mode, roles=roles, k=self.top_k)
             span["hits"] = len(hits)
         sources = [{"n": i, "doc_id": h.chunk.doc_id, "title": h.chunk.title, "section": h.chunk.section,
                     "text": h.chunk.text, "score": round(h.score, 4)} for i, h in enumerate(hits, start=1)]

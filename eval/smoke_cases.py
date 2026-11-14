@@ -1,6 +1,6 @@
 """Questions and expected answers for eval/smoke_check.py: (role, question, must_contain, must_not_contain).
 A "|" inside an expected text means either wording is accepted (for example "3 days|three days")."""
-IDK = "I don't know"
+IDK = "couldn't find that in the company policies"
 Q = [
  # normal questions
  ("", "How many days of annual leave do I get each year?", ["24"], []),
