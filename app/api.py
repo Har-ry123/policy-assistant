@@ -6,14 +6,18 @@ them from a verified token (OIDC / JWT), never from a client-controlled header.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .graph import build_graph, resume_agent, run_agent
 from .rag import RAGPipeline, build_pipeline
 from .tools import LeaveStore, ToolRegistry
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class AskRequest(BaseModel):
@@ -50,6 +54,10 @@ def create_app(pipeline: RAGPipeline | None = None) -> FastAPI:
     store = LeaveStore()
     graph = build_graph(pipeline, ToolRegistry(pipeline, store))
     app.state.pipeline, app.state.store, app.state.graph = pipeline, store, graph
+
+    @app.get("/", include_in_schema=False)
+    def home():
+        return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/health")
     def health():

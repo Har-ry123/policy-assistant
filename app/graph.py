@@ -25,7 +25,7 @@ from .tools import LeaveRequest, ToolRegistry
 
 ANNUAL_LIMIT, SICK_LIMIT, HR_THRESHOLD = 24, 10, 10
 _LEAVE_VERB = re.compile(r"\b(apply for|request|book|take|submit|raise|need)\b.*\bleave\b", re.I)
-_DAYS = re.compile(r"(\d+)\s*(?:working\s+)?days?", re.I)
+_DAYS = re.compile(r"(\d+)\s*(?:working\s+|sick\s+|annual\s+|casual\s+|paid\s+)?days?", re.I)
 _ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 
@@ -42,6 +42,8 @@ class AgentState(TypedDict, total=False):
     status: str
     reason: str
     result: dict
+    usage: dict
+    trace: dict
 
 
 def parse_leave(message: str, user: str) -> tuple[dict | None, str]:
@@ -87,7 +89,7 @@ def build_graph(pipeline, registry: ToolRegistry, checkpointer=None):
 
     def answer_question(state: AgentState):
         ans = pipeline.ask(state["message"], roles=state.get("roles", []))
-        return {"answer": ans.answer, "sources": ans.sources, "status": "answered"}
+        return {"answer": ans.answer, "sources": ans.sources, "status": "answered", "usage": ans.usage, "trace": ans.trace}
 
     def draft_leave(state: AgentState):
         leave, problem = parse_leave(state["message"], state.get("user", ""))
@@ -135,7 +137,7 @@ def _summarise(result: dict) -> dict:
     pending = result.get("__interrupt__")
     if pending:
         return {"status": "pending_approval", "approval": pending[0].value}
-    return {k: result.get(k) for k in ("status", "answer", "sources", "reason", "result") if result.get(k) is not None}
+    return {k: result.get(k) for k in ("status", "answer", "sources", "reason", "result", "usage", "trace") if result.get(k) is not None}
 
 
 def run_agent(graph, message: str, user: str = "employee", roles=(), thread_id: str = "t1") -> dict:

@@ -141,3 +141,37 @@ def test_agent_returns_clean_502_when_the_model_fails(pipeline, monkeypatch):
     r = client.post("/agent", json={"message": "How many sick days do I get?", "user": "asha"})
     assert r.status_code == 502 and "unavailable" in r.json()["detail"]
     assert client.post("/ask", json={"question": "How many sick days do I get?"}).status_code == 502
+
+
+def test_website_is_served_and_agent_returns_usage(pipeline):
+    client = TestClient(create_app(pipeline))
+    page = client.get("/")
+    assert page.status_code == 200 and "Company Policy Assistant" in page.text
+    assert "textContent" in page.text and "innerHTML = ''" in page.text    # model text is never injected as HTML
+    out = client.post("/agent", json={"message": "How many sick days do I get?", "user": "asha"}).json()
+    assert out["status"] == "answered" and out["usage"]["cost_usd"] >= 0 and out["trace"]["spans"]
+
+
+@pytest.mark.parametrize("message,kind,days", [
+    ("I want to take 3 sick days of leave", "sick", 3),
+    ("I want to take 5 working days of leave", "annual", 5),
+    ("Please book 2 annual days leave", "annual", 2),
+])
+def test_leave_requests_with_a_word_between_the_number_and_days(agent, message, kind, days):
+    graph, _ = agent
+    out = run_agent(graph, message, user="asha", thread_id="w-" + message[:12])
+    assert out["status"] == "pending_approval"
+    assert out["approval"]["request"]["days"] == days
+    assert out["approval"]["request"]["leave_type"] == kind
+
+
+def test_questions_with_numbers_are_still_questions(agent):
+    graph, _ = agent
+    out = run_agent(graph, "How many days of sick leave do I get?", thread_id="q-days")
+    assert out["status"] == "answered"
+
+
+def test_website_separates_cited_sources_from_other_passages(pipeline):
+    page = TestClient(create_app(pipeline)).get("/").text
+    assert "Cited source" in page and "Other passages the model saw" in page
+    assert "addSources(box, data.sources, data.answer)" in page
