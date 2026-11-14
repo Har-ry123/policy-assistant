@@ -178,7 +178,7 @@ Two real bugs were found this way and fixed: some models write citations as `【
 
 ## Deployment
 
-Note: the Docker image installs only `requirements.txt`. If you set `EMBEDDER=minilm` there, add `sentence-transformers` to `requirements.txt` first (it makes the image much larger), and mind that `/stream` currently sends the finished answer word by word rather than streaming model tokens.
+Note: the Docker image installs `requirements.txt` plus `sentence-transformers` (so `EMBEDDER=minilm` works; this makes the image large). Mind that `/stream` currently sends the finished answer word by word rather than streaming model tokens.
 
 ```bash
 docker build -t policy-assistant .
