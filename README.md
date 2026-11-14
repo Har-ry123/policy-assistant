@@ -42,7 +42,7 @@ python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q               # 44 tests
+python -m pytest -q               # 45 tests
 python -m app.cli "How many days of annual leave do I get?" --trace
 python -m app.cli "What is the salary band for level 3?" --roles hr
 python -m eval.run_eval           # writes eval/results.md
@@ -65,8 +65,8 @@ pip install sentence-transformers
 If you get `No module named 'langgraph'`, the terminal is not using the project's virtual environment (the prompt has no `(.venv)`). These scripts always use the right Python:
 
 ```powershell
-.un_api.ps1      # start the API on port 8000
-.un_tests.ps1    # run the tests
+.\run_api.ps1      # start the API on port 8000
+.\run_tests.ps1    # run the tests
 ```
 
 ## API
@@ -142,9 +142,9 @@ docker compose up --build
 
 ## What was and was not verified
 
-Verified here: all 44 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script, the fine-tuning export, and the offline pipeline end to end.
+Verified here: all 45 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
 
-**Not run:** live Groq calls, sentence-transformers models, a real Qdrant server, Docker / docker compose, and the MCP server (it needs `pip install mcp` and a host). Test those in your environment before depending on them.
+**Not run:** a real Qdrant server (the project uses Qdrant in memory), Docker / docker compose, the neural cross-encoder reranker, and the MCP server (it needs `pip install mcp` and a host). Test those in your environment before depending on them.
 
 ## Limitations and next steps
 
