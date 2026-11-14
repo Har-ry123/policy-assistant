@@ -25,7 +25,9 @@ def main() -> None:
         for r in rows:
             if r["type"] not in ("normal", "out_of_scope"):
                 continue
-            answer = r.get("reference_answer") or IDK
+            answer = r.get("reference_answer") or (IDK if r["type"] == "out_of_scope" else None)
+            if answer is None:
+                continue          # never train on a row without a reference answer
             example = {"messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": r["question"]},

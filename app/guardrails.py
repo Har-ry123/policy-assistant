@@ -42,8 +42,14 @@ def redact(text: str, keep=()) -> str:
     """Hide personal data. Values listed in ``keep`` (for example a company phone number that
     comes from the policy documents) are left alone."""
     keep = set(keep)
+
+    def hide(label: str):
+        def replace(match) -> str:
+            return match.group(0) if match.group(0) in keep else f"[{label}]"
+        return replace
+
     for label, pattern in PII_PATTERNS.items():
-        text = pattern.sub(lambda m, label=label: m.group(0) if m.group(0) in keep else f"[{label}]", text)
+        text = pattern.sub(hide(label), text)
     return text
 
 

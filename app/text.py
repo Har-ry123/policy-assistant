@@ -44,7 +44,7 @@ def tokens(text: str, keep_stop: bool = False) -> list[str]:
 
 
 def sentences(text: str) -> list[str]:
-    parts = []
+    parts: list[str] = []
     for line in text.splitlines():
         line = line.strip().lstrip("-*# ").strip()
         if line:

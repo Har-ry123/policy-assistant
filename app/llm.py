@@ -103,7 +103,8 @@ class FakeLLM:
             text = IDK
         else:
             top = scored[0][0]
-            picked, seen = [], set()
+            picked: list[str] = []
+            seen: set[str] = set()
             for overlap, n, sent in scored:
                 if overlap >= max(2, top - 1) and sent not in seen and len(picked) < 2:
                     picked.append(f"{sent} [{n}]")

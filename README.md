@@ -4,6 +4,10 @@ A retrieval-augmented assistant that answers employee questions about company po
 
 It is the capstone for the AI Engineering Study Handbook: every week of the course appears in the code (see the coverage table).
 
+![Demo: cited answers, role-based access, human approval, attack blocked](docs/demo.gif)
+
+*The demo above was recorded from the real website with the real model: a cited answer with its source, the same salary question refused for an Employee and answered for HR, an engineering-only question answered for an Engineer and refused for HR, a leave request waiting for approval, a blocked prompt-injection attack, and the per-answer timeline. Re-record it with `pip install -r requirements-demo.txt` and `python -m demo.make_demo` (it spends a few thousand model tokens).*
+
 ## Architecture
 
 ```
@@ -101,7 +105,29 @@ curl -s localhost:8000/agent/approve -H "content-type: application/json" \
 
 ## Evaluation
 
-`python -m eval.run_eval` compares four retrieval modes on 32 questions (27 answerable, 3 out of scope, 2 restricted) and writes `eval/results.md`. Numbers from the **offline baseline** (hash embedder, extractive model, 43 chunks), copied from that file:
+### Latest: 20 documents, 71 questions
+
+The corpus grew from 9 to **20 documents (87 passages)** and the golden set from 32 to **71 questions**: 58 answerable (including reworded questions and questions that need two documents), 6 out of scope, and 7 access-leak attempts across the HR-only and Engineering-only documents. Semantic search (`all-MiniLM-L6-v2`), k=3. These retrieval numbers need no model and are in `eval/results_retrieval_only.md`:
+
+| search mode | hit rate | precision@3 | recall | MRR |
+|---|---|---|---|---|
+| **hybrid** (vector + BM25, RRF) | 1.00 | **0.72** | 1.00 | **1.00** |
+| vector | 1.00 | 0.68 | 1.00 | 0.99 |
+| hybrid + offline lexical reranker | 0.98 | 0.64 | 0.98 | 0.97 |
+| keyword (BM25) only | 1.00 | 0.61 | 1.00 | 0.97 |
+
+With the bigger corpus the search modes finally separate: hybrid search is best, keyword-only is weakest, and the offline lexical reranker still hurts precision (the neural cross-encoder is the next thing to try). Answer quality with the real model `openai/gpt-oss-120b` (the free daily limit of `gpt-oss-20b` was used up, so this is a different model from the older tables below), file `eval/results_120b_71q.md`:
+
+| search mode | correctness | faithfulness (word-overlap proxy) | refusal accuracy | leak rate |
+|---|---|---|---|---|
+| hybrid | 0.91 | 0.73 | 1.00 | 0.00 |
+| hybrid + rerank | 0.90 | 0.72 | 1.00 | 0.00 |
+
+How to read this: correctness dropped from 0.96 to 0.91 because the questions are harder, not because the system got worse. Re-asking the failures showed that 3 of 4 were only wording ("three days" for "3 days", "one hour" for "1 hour", "1-to-5 scale" for "1 to 5"); the test keywords now accept both wordings, but **that corrected dataset has not been re-scored yet** (the model's daily limit ran out), so the 0.91 above is measured with the stricter keywords. The one real miss is "Can I fly business class?": search finds the right passage every time, but the model sometimes answers "I don't know". The out-of-scope refusals (100%) and the access-control result (0% leaks, tested for every role pair) held on the larger set. One question is worth about 0.02 correctness here. To reproduce: `python -m eval.run_eval --answer-modes hybrid,hybrid_rerank --out results.md`.
+
+### Earlier measurement: 9 documents, 32 questions
+
+`python -m eval.run_eval` compares four retrieval modes on a golden set and writes `eval/results.md`. The numbers below are the earlier run on **32 questions (27 answerable, 3 out of scope, 2 restricted)** and 9 documents. First, the **offline baseline** (hash embedder, extractive model, 43 chunks):
 
 | mode | hit rate | precision@3 | recall | MRR |
 |---|---|---|---|---|
@@ -168,7 +194,7 @@ Verified here: all 56 tests (retrieval modes, access control, guardrails, the La
 
 ## Limitations and next steps
 
-* Tiny corpus; add real documents and a larger, harder golden dataset.
+* Small corpus (20 documents, 71 questions): good for comparing methods, not for claiming production accuracy. Add real documents and more adversarial questions.
 * The offline embedder and reranker are lexical baselines and miss synonyms: "What is the daily meal limit abroad?" returns "I don't know" because the policy says "international". This is exactly the gap real embeddings (`EMBEDDER=minilm`) close, and a good case to add to the golden dataset.
 * In-memory conversation state and leave store; use a database and a persistent LangGraph checkpointer for production.
 * Add an LLM-as-judge for faithfulness, and rate limiting per user.

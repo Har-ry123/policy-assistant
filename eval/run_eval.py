@@ -41,6 +41,12 @@ def load_golden() -> list[dict]:
     return [json.loads(x) for x in lines if x.strip()]
 
 
+def has(answer: str, key: str) -> bool:
+    """True if the (normalised) answer contains the key; a key like "3 days|three days" accepts either wording."""
+    a = norm(answer)
+    return any(norm(alt) in a for alt in key.split("|"))
+
+
 def retrieval_metrics(pipe, rows: list[dict], mode: str) -> dict:
     hit = prec = rec = mrr = 0.0
     n = 0
@@ -76,7 +82,7 @@ def answer_metrics(pipe, rows: list[dict], mode: str) -> dict:
         cost += ans.usage.get("cost_usd", 0.0)
         if r["type"] == "normal":
             n_norm += 1
-            correct += all(norm(k) in norm(ans.answer) for k in r["keywords"])
+            correct += all(has(ans.answer, k) for k in r["keywords"])
             faith += faithfulness(ans.answer, ans.sources)
         elif r["type"] == "out_of_scope":
             n_oos += 1
@@ -84,7 +90,7 @@ def answer_metrics(pipe, rows: list[dict], mode: str) -> dict:
         else:
             n_den += 1
             text = ans.answer + " " + " ".join(s["text"] for s in ans.sources)
-            leaks += any(norm(f) in norm(text) for f in r["forbidden"]) or any(
+            leaks += any(has(text, f) for f in r["forbidden"]) or any(
                 s["doc_id"] == r["restricted_doc"] for s in ans.sources)
     return {"correctness": correct / n_norm, "faithfulness": faith / n_norm,
             "refusal_accuracy": refused / n_oos, "leak_rate": leaks / n_den, "est_cost_usd": round(cost, 6)}
@@ -93,10 +99,17 @@ def answer_metrics(pipe, rows: list[dict], mode: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--store", default="qdrant", choices=["qdrant", "brute"])
+    ap.add_argument("--answer-modes", default=",".join(MODES),
+                    help="comma list of search modes to run the answer checks for (they spend model tokens); 'none' skips them")
+    ap.add_argument("--out", default="results.md", help="report file name inside eval/")
     args = ap.parse_args()
+    answer_modes = [] if args.answer_modes == "none" else [m for m in args.answer_modes.split(",") if m]
+    unknown = [m for m in answer_modes if m not in MODES]
+    if unknown:
+        raise SystemExit(f"Unknown mode(s): {unknown}. Choose from {list(MODES)}")
     pipe = build_pipeline(Settings.from_env(), store_kind=args.store)
     rows = load_golden()
-    lines = [f"# Evaluation results\n",
+    lines = ["# Evaluation results\n",
              f"LLM: `{pipe.llm.name}` | store: `{args.store}` | questions: {len(rows)} "
              f"({sum(r['type'] == 'normal' for r in rows)} answerable, "
              f"{sum(r['type'] == 'out_of_scope' for r in rows)} out of scope, "
@@ -105,16 +118,22 @@ def main() -> None:
     for mode in MODES:
         m = retrieval_metrics(pipe, rows, mode)
         lines.append(f"| {mode} | {m['hit_rate']:.2f} | {m['precision@3']:.2f} | {m['recall']:.2f} | {m['mrr']:.2f} |")
-    lines += ["", "## Answers\n", "| mode | correctness | faithfulness | refusal accuracy | leak rate | est. cost (USD) |",
-              "|---|---|---|---|---|---|"]
-    for mode in MODES:
-        a = answer_metrics(pipe, rows, mode)
-        lines.append(f"| {mode} | {a['correctness']:.2f} | {a['faithfulness']:.2f} | "
-                     f"{a['refusal_accuracy']:.2f} | {a['leak_rate']:.2f} | {a['est_cost_usd']} |")
+    if answer_modes:
+        lines += ["", "## Answers\n", "| mode | correctness | faithfulness | refusal accuracy | leak rate | est. cost (USD) |",
+                  "|---|---|---|---|---|---|"]
+        for mode in answer_modes:
+            a = answer_metrics(pipe, rows, mode)
+            lines.append(f"| {mode} | {a['correctness']:.2f} | {a['faithfulness']:.2f} | "
+                         f"{a['refusal_accuracy']:.2f} | {a['leak_rate']:.2f} | {a['est_cost_usd']} |")
     report = "\n".join(lines) + "\n"
-    (ROOT / "results.md").write_text(report, encoding="utf-8")
+    (ROOT / args.out).write_text(report, encoding="utf-8")
     print(report)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:     # a short message instead of a long traceback (for example Groq's daily token limit)
+        name = type(exc).__name__
+        hint = " The free daily limit of this model is probably used up; wait for the reset, or set MODEL= to another model." if name == "RateLimitError" else ""
+        raise SystemExit(f"Evaluation stopped: {name}: {str(exc)[:240]}{hint}\nNothing was saved.")

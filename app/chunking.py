@@ -68,7 +68,8 @@ def chunk_document(doc: Document, max_chars: int = 600) -> list[Chunk]:
     chunks: list[Chunk] = []
     for section, body_lines in sections:
         sents = sentences(" ".join(body_lines))
-        pieces, cur = [], []
+        pieces: list[list[str]] = []
+        cur: list[str] = []
         for s in sents:
             if cur and len(" ".join(cur + [s])) > max_chars:
                 pieces.append(cur)

@@ -7,3 +7,4 @@ qdrant_data/
 eval/finetune_chat.jsonl
 _server.log
 eval/_*.txt
+demo/_frames/
