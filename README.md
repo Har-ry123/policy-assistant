@@ -42,7 +42,7 @@ python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q               # 54 tests
+python -m pytest -q               # 56 tests
 python -m app.cli "How many days of annual leave do I get?" --trace
 python -m app.cli "What is the salary band for level 3?" --roles hr
 python -m eval.run_eval           # writes eval/results.md
@@ -71,7 +71,15 @@ If you get `No module named 'langgraph'`, the terminal is not using the project'
 
 ## Website
 
-Start the server and open **http://127.0.0.1:8000/** : a chat page (`app/static/index.html`, plain HTML/CSS/JavaScript, no build step) with a role switch (Employee / HR / Engineering), clickable example questions, cited sources shown first (other retrieved passages folded away), timing / token / cost per answer, and the leave-request flow with **Approve / Reject** buttons. It was exercised in a browser against the real Groq model: the salary question is refused for Employee and answered for HR, a leave request waits for approval and is saved only after Approve, and the injection example is blocked. Model text is inserted with `textContent` (never as HTML), and the role switch is a demo; use verified identity in production.
+Start the server and open **http://127.0.0.1:8000/**. It is one HTML file (`app/static/index.html`, plain HTML/CSS/JavaScript, no build step):
+
+- **Sidebar:** role switch (Employee / HR / Engineer) with a hint of what each role can see, your name for leave requests, search settings (hybrid + rerank, hybrid, vector, keyword), the saved leave requests, a live server status line (model and number of passages), API docs and GitHub links, and a light/dark toggle.
+- **Welcome screen:** eight example cards. Role-specific cards switch the role for you (for example *Salary band* switches to HR).
+- **Answers:** clickable `[1]` citation chips that open and highlight the source passage, cited sources shown first with other retrieved passages folded away, timing / token / cost chips, and a *How this answer was produced* timeline (check question, search, write answer, check answer).
+- **Leave requests:** an approval card with the request details and the reviewer's notes; the request is saved only after **Approve**.
+- **Polish:** typing indicator, Enter to send (Shift+Enter for a new line), character counter, clear error messages (for example when the model's daily limit is reached), a phone layout with a slide-out menu, keyboard focus styles and reduced-motion support.
+
+It was exercised in a real browser against a real model: role switching, the approval flow, the attack example, the citation chips, the theme toggle, the phone menu and keyboard sending. Model text is always inserted as text nodes (never as HTML), which a test enforces. The role switch is a demo; use verified identity in production.
 
 ## API
 
@@ -154,7 +162,7 @@ docker compose up --build
 
 ## What was and was not verified
 
-Verified here: all 54 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
+Verified here: all 56 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
 
 **Not run:** a real Qdrant server (the project uses Qdrant in memory), Docker / docker compose, the neural cross-encoder reranker, and the MCP server (it needs `pip install mcp` and a host). Test those in your environment before depending on them.
 

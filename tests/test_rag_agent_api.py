@@ -147,9 +147,29 @@ def test_website_is_served_and_agent_returns_usage(pipeline):
     client = TestClient(create_app(pipeline))
     page = client.get("/")
     assert page.status_code == 200 and "Company Policy Assistant" in page.text
-    assert "textContent" in page.text and "innerHTML = ''" in page.text    # model text is never injected as HTML
     out = client.post("/agent", json={"message": "How many sick days do I get?", "user": "asha"}).json()
     assert out["status"] == "answered" and out["usage"]["cost_usd"] >= 0 and out["trace"]["spans"]
+
+
+def test_website_never_inserts_model_text_as_html(pipeline):
+    import re
+    page = TestClient(create_app(pipeline)).get("/").text
+    assert "insertAdjacentHTML" not in page and "document.write" not in page
+    assigned = re.findall(r"innerHTML\s*=\s*([^;\n]*)", page)
+    assert all(v.strip() in ("''", '""') for v in assigned)        # only ever used to clear an element
+
+
+def test_agent_accepts_a_search_mode_and_rejects_unknown_ones(pipeline):
+    client = TestClient(create_app(pipeline))
+    ok = client.post("/agent", json={"message": "How many sick days do I get?", "user": "asha", "mode": "bm25"}).json()
+    assert ok["status"] == "answered" and "bm25" in str(ok["trace"])
+    assert client.post("/agent", json={"message": "How many sick days do I get?", "user": "a", "mode": "magic"}).status_code == 422
+
+
+def test_website_separates_cited_sources_from_other_passages(pipeline):
+    page = TestClient(create_app(pipeline)).get("/").text
+    assert "Cited source" in page and "Other passages the model saw" in page
+    assert "addSources(m.bubble, data.sources, data.answer)" in page
 
 
 @pytest.mark.parametrize("message,kind,days", [
@@ -169,9 +189,3 @@ def test_questions_with_numbers_are_still_questions(agent):
     graph, _ = agent
     out = run_agent(graph, "How many days of sick leave do I get?", thread_id="q-days")
     assert out["status"] == "answered"
-
-
-def test_website_separates_cited_sources_from_other_passages(pipeline):
-    page = TestClient(create_app(pipeline)).get("/").text
-    assert "Cited source" in page and "Other passages the model saw" in page
-    assert "addSources(box, data.sources, data.answer)" in page

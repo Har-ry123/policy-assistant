@@ -32,6 +32,7 @@ _ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 class AgentState(TypedDict, total=False):
     message: str
     user: str
+    mode: str
     roles: list
     intent: str
     answer: str
@@ -88,7 +89,7 @@ def build_graph(pipeline, registry: ToolRegistry, checkpointer=None):
         return {"intent": "leave_request" if wants_leave else "question"}
 
     def answer_question(state: AgentState):
-        ans = pipeline.ask(state["message"], roles=state.get("roles", []))
+        ans = pipeline.ask(state["message"], roles=state.get("roles", []), mode=state.get("mode"))
         return {"answer": ans.answer, "sources": ans.sources, "status": "answered", "usage": ans.usage, "trace": ans.trace}
 
     def draft_leave(state: AgentState):
@@ -140,9 +141,9 @@ def _summarise(result: dict) -> dict:
     return {k: result.get(k) for k in ("status", "answer", "sources", "reason", "result", "usage", "trace") if result.get(k) is not None}
 
 
-def run_agent(graph, message: str, user: str = "employee", roles=(), thread_id: str = "t1") -> dict:
+def run_agent(graph, message: str, user: str = "employee", roles=(), thread_id: str = "t1", mode: str | None = None) -> dict:
     cfg = {"configurable": {"thread_id": thread_id}}
-    return _summarise(graph.invoke({"message": message, "user": user, "roles": list(roles)}, cfg))
+    return _summarise(graph.invoke({"message": message, "user": user, "roles": list(roles), "mode": mode}, cfg))
 
 
 def resume_agent(graph, thread_id: str, approve: bool) -> dict:

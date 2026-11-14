@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from .graph import build_graph, resume_agent, run_agent
 from .rag import RAGPipeline, build_pipeline
+from .retrieval import MODES
 from .tools import LeaveStore, ToolRegistry
 
 
@@ -37,6 +38,7 @@ class AgentRequest(BaseModel):
     message: str = Field(min_length=3, max_length=500)
     user: str = Field(default="employee", max_length=80)
     thread_id: str | None = None
+    mode: str | None = None
 
 
 class ApproveRequest(BaseModel):
@@ -87,9 +89,11 @@ def create_app(pipeline: RAGPipeline | None = None) -> FastAPI:
 
     @app.post("/agent")
     def agent(req: AgentRequest, x_user_roles: str | None = Header(default=None)):
+        if req.mode and req.mode not in MODES:
+            raise HTTPException(status_code=422, detail="mode must be one of " + ", ".join(MODES))
         thread_id = req.thread_id or uuid.uuid4().hex
         try:
-            out = run_agent(graph, req.message, user=req.user, roles=parse_roles(x_user_roles), thread_id=thread_id)
+            out = run_agent(graph, req.message, user=req.user, roles=parse_roles(x_user_roles), thread_id=thread_id, mode=req.mode)
         except Exception:
             raise HTTPException(status_code=502, detail="The model service is unavailable.")
         return {"thread_id": thread_id, **out}
