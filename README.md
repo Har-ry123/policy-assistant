@@ -37,7 +37,7 @@ It is the capstone for the AI Engineering Study Handbook: every week of the cour
 | 6 | LangChain, LangGraph, multi-agent, MCP | `app/langchain_rag.py` (LCEL chain), `app/graph.py` (state, nodes, conditional edges, `interrupt` + checkpointer, reviewer agent), `app/mcp_server.py` |
 | 7 | observability, guardrails, security | `app/tracing.py`, `app/guardrails.py`, access control in `app/retrieval.py`, `tests/test_guardrails_security.py` |
 | 8 | prompt caching, cost, deployment, fine-tuning, capstone | stable prompt prefix in `app/rag.py`; `app/api.py`, `Dockerfile`, `docker-compose.yml`; `eval/finetune_export.py`; this project |
-| Bonus | interview, resume | `docs/INTERVIEW.md`, `docs/RESUME.md` |
+
 
 ## Quick start (works offline, no keys)
 
