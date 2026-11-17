@@ -150,7 +150,7 @@ Windows:
 Any system:
     python -m pytest -q
 
-Expected result:  63 passed
+Expected result:  99 passed
 
 
 ---------------------------------------------------------------------
@@ -262,7 +262,7 @@ PROJECT MAP
     app/static/   the website page
     data/policies/ the 20 sample policy documents (markdown)
     eval/         evaluation set (71 questions) and scripts
-    tests/        63 automated tests
+    tests/        99 automated tests
     docs/         demo GIF, interview and resume notes
     README.md     architecture, evaluation results, limitations
     run_api.ps1   start the website (Windows)

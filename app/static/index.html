@@ -135,6 +135,10 @@
   .bubble.error{border-color:var(--warn-line);background:var(--warn-soft)}
   .answer{white-space:pre-wrap;color:var(--ink)}
   .row.bot .answer{font-size:.97rem}
+  .answer.live::after{content:'';display:inline-block;width:.5em;height:1em;margin-left:2px;vertical-align:-2px;background:var(--ink);opacity:.5;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion: reduce){.answer.live::after{animation:none}}
+  .approval .how{margin:8px 0 0;font-size:.8rem;color:var(--muted)}
   .cite{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin:0 2px;border-radius:6px;border:1px solid var(--accent-line);background:var(--accent-soft);color:var(--accent);font-size:.7rem;font-weight:700;vertical-align:1px;transition:background .12s,color .12s}
   .cite:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .pill{display:inline-block;margin-left:8px;font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--bad-soft);color:var(--bad);vertical-align:middle}
@@ -225,7 +229,7 @@
 
     <section>
       <h3 class="side-title"><label for="user">Your name</label></h3>
-      <input class="field" id="user" type="text" value="asha" maxlength="80" autocomplete="off">
+      <input class="field" id="user" type="text" value="Harry" maxlength="80" autocomplete="off">
     </section>
 
     <details class="adv">
@@ -489,6 +493,10 @@
     const ul = el('ul', '', 'notes');
     (a.review || []).forEach(n => ul.appendChild(el('li', n)));
     card.appendChild(ul);
+    const how = [a.router === 'ai' ? 'Details read by the AI router' : 'Details read by rules',
+                 a.reviewer === 'ai' ? 'reviewed by the AI reviewer' : 'reviewed by rules'];
+    if (a.recommendation) how.push('AI recommendation: ' + (a.recommendation === 'approve' ? 'approve' : 'needs attention'));
+    card.appendChild(el('p', how.join(' · '), 'how'));
     const ok = el('button', 'Approve', 'btn ok'), no = el('button', 'Reject', 'btn danger');
     ok.type = no.type = 'button';
     const decide = async approve => {
@@ -507,33 +515,70 @@
   }
 
   /* ---------- sending ---------- */
+  function showResult(m, data){
+    if (data.status === 'pending_approval'){
+      m.bubble.appendChild(el('span', 'I prepared a leave request. A person must approve it before anything is saved.', 'answer'));
+      addApproval(m.bubble, data);
+      return;
+    }
+    const flagged = data.status === 'blocked' || data.status === 'invalid_request';
+    if (data.status === 'blocked') m.bubble.classList.add('blocked');
+    const span = el('span', '', 'answer');
+    renderRich(span, data.answer || data.status, n => openSource(m.bubble, n));
+    m.bubble.appendChild(span);
+    if (flagged) m.bubble.appendChild(el('span', data.status.replace('_', ' '), 'pill'));
+    addSources(m.bubble, data.sources, data.answer);
+    addMeta(m.bubble, data);
+  }
+  // Reads server-sent events ("data: {json}" + blank line) and calls onEvent for each one
+  async function stream(path, body, onEvent){
+    const r = await fetch(path, {method: 'POST', headers: headers(), body: JSON.stringify(body)});
+    if (!r.ok){
+      let data = null; try { data = await r.json(); } catch(e) {}
+      const err = new Error(data && typeof data.detail === 'string' ? data.detail : 'Error ' + r.status); err.status = r.status; throw err;
+    }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;){
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += value;
+      let cut;
+      while ((cut = buffer.indexOf('\n\n')) >= 0){
+        const line = buffer.slice(0, cut); buffer = buffer.slice(cut + 2);
+        if (line.startsWith('data: ')) onEvent(JSON.parse(line.slice(6)));
+      }
+    }
+  }
   async function ask(text){
     if (busy) return;
     text = (text || '').trim(); if (text.length < 3) return;
     busy = true; send.disabled = true;
     addUser(text);
     const wait = typing();
+    let m = null, live = null, written = '';
+    const bot = () => { if (!m){ wait.remove(); m = addBot(); } return m; };
     try {
-      const data = await post('/agent', {message: text, user: ($('user').value || 'employee').trim(), mode: $('mode').value});
-      wait.remove();
-      const m = addBot();
-      if (data.status === 'pending_approval'){
-        m.bubble.appendChild(el('span', 'I prepared a leave request. A person must approve it before anything is saved.', 'answer'));
-        addApproval(m.bubble, data);
-      } else {
-        const flagged = data.status === 'blocked' || data.status === 'invalid_request';
-        if (data.status === 'blocked') m.bubble.classList.add('blocked');
-        const span = el('span', '', 'answer');
-        renderRich(span, data.answer || data.status, n => openSource(m.bubble, n));
-        m.bubble.appendChild(span);
-        if (flagged) m.bubble.appendChild(el('span', data.status.replace('_', ' '), 'pill'));
-        addSources(m.bubble, data.sources, data.answer);
-        addMeta(m.bubble, data);
-      }
+      await stream('/agent/stream', {message: text, user: ($('user').value || 'employee').trim(), mode: $('mode').value}, ev => {
+        if (ev.type === 'sources'){
+          const label = wait.querySelector('.typing span'); if (label) label.textContent = 'Writing the answer';
+        } else if (ev.type === 'token'){
+          // the answer appears as the model writes it; it is replaced by the checked answer at the end
+          if (!live){ live = el('span', '', 'answer live'); bot().bubble.appendChild(live); }
+          written += ev.text; live.textContent = written; scrollDown();
+        } else if (ev.type === 'done' || ev.type === 'agent'){
+          if (live){ live.remove(); live = null; }
+          showResult(bot(), ev);
+        } else if (ev.type === 'error'){
+          const err = new Error(ev.detail); err.status = 502; throw err;
+        }
+      });
+      if (!m) throw new Error('The server sent no answer.');
     } catch(e){
       wait.remove();
-      const m = addBot(); m.bubble.classList.add('error');
-      m.bubble.appendChild(el('span', e.status === 502 || /unavailable/i.test(e.message)
+      if (m){ m.row.remove(); m = null; }
+      const fail = addBot(); fail.bubble.classList.add('error');
+      fail.bubble.appendChild(el('span', e.status === 502 || /unavailable/i.test(e.message)
         ? 'The model service is unavailable right now (it may have hit its daily limit). Please try again later.'
         : 'Something went wrong: ' + e.message, 'answer'));
     } finally {

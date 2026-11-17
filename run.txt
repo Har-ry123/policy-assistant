@@ -1,2 +1,3 @@
 .\run_tests.ps1
-.\run_api.ps1
+
+only this- .\run_api.ps1

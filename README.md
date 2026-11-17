@@ -21,20 +21,20 @@ It is the capstone for the AI Engineering Study Handbook: every week of the cour
                                   |
                          Qdrant (HNSW, payload filter on "access")
 
- agent (LangGraph):  guard -> classify -+-> answer_question
-                                        +-> draft_leave -> review agent -> HUMAN APPROVAL -> submit / reject
+ agent (LangGraph):  guard -> classify (AI picks a tool) -+-> answer_question (tokens streamed)
+                                                          +-> draft_leave -> review (AI agent + rules) -> HUMAN APPROVAL -> submit / reject
 ```
 
 ## Topic coverage (handbook weeks -> this project)
 
 | Week | Topics | Where |
 |---|---|---|
-| 1 | venv, API keys, LLM call, system role, temperature, tokens, streaming, retries, cost | `app/config.py`, `app/llm.py` (Groq client, retry with backoff, `temperature=0`), `app/rag.py` (usage + cost), `/stream` in `app/api.py` |
-| 2 | prompt engineering, structured output, prompt chaining | `SYSTEM_PROMPT` in `app/llm.py`; Pydantic `LeaveRequest` in `app/tools.py`; the guard -> retrieve -> generate -> check chain in `app/rag.py` |
+| 1 | venv, API keys, LLM call, system role, temperature, tokens, streaming, retries, cost | `app/config.py`, `app/llm.py` (Groq client, retry with backoff, `temperature=0`, real token streaming), `app/rag.py` (usage + cost, `ask_stream`), `/stream` and `/agent/stream` in `app/api.py` (server-sent events) |
+| 2 | prompt engineering, structured output, prompt chaining | `SYSTEM_PROMPT` in `app/llm.py`; structured output: the model extracts leave details as tool arguments (`LeaveDraft`) and the reviewer answers in JSON mode (`Review`), both validated by Pydantic, in `app/graph.py`; the guard -> retrieve -> generate -> check chain in `app/rag.py` |
 | 3 | RAG, embeddings, chunking, Qdrant, filters, HNSW, vector-DB alternatives | `app/chunking.py`, `app/embeddings.py`, `app/store.py` (`QdrantStore` with HNSW config and an `access` filter; `BruteForceStore` shows swapping the backend) |
 | 4 | hybrid search, reranking, RAG evaluation | `app/bm25.py`, `app/retrieval.py` (RRF), `app/rerank.py`, `eval/run_eval.py`, `eval/golden.jsonl` |
-| 5 | ReAct / agents / tool use | `app/tools.py` (allowlist, validated arguments, approval gate), `app/graph.py` |
-| 6 | LangChain, LangGraph, multi-agent, MCP | `app/langchain_rag.py` (LCEL chain), `app/graph.py` (state, nodes, conditional edges, `interrupt` + checkpointer, reviewer agent), `app/mcp_server.py` |
+| 5 | ReAct / agents / tool use | function calling: the model chooses `answer_policy_question` or `request_leave` (`route_message` in `app/graph.py`); `app/tools.py` (allowlist, validated arguments, approval gate) |
+| 6 | LangChain, LangGraph, multi-agent, MCP | `app/langchain_rag.py` (LCEL chain), `app/graph.py` (state, nodes, conditional edges, `interrupt` + checkpointer, an AI reviewer agent with cited notes), `app/mcp_server.py` |
 | 7 | observability, guardrails, security | `app/tracing.py`, `app/guardrails.py`, access control in `app/retrieval.py`, `tests/test_guardrails_security.py` |
 | 8 | prompt caching, cost, deployment, fine-tuning, capstone | stable prompt prefix in `app/rag.py`; `app/api.py`, `Dockerfile`, `docker-compose.yml`; `eval/finetune_export.py`; this project |
 
@@ -48,7 +48,7 @@ python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python -m pytest -q               # 63 tests
+python -m pytest -q               # 99 tests
 python -m app.cli "How many days of annual leave do I get?" --trace
 python -m app.cli "What is the salary band for level 3?" --roles hr
 python -m eval.run_eval           # writes eval/results.md
@@ -81,8 +81,9 @@ Start the server and open **http://127.0.0.1:8000/**. It is one HTML file (`app/
 
 - **Sidebar:** role switch (Employee / HR / Engineer) with a hint of what each role can see, your name for leave requests, search settings (hybrid + rerank, hybrid, vector, keyword), the saved leave requests, a live server status line (model and number of passages), API docs and GitHub links, and a light/dark toggle.
 - **Welcome screen:** eight example cards. Role-specific cards switch the role for you (for example *Salary band* switches to HR).
+- **Streaming:** answers appear word by word as the model writes them (`/agent/stream`, server-sent events), then are replaced by the checked answer with citation chips.
 - **Answers:** clickable `[1]` citation chips that open and highlight the source passage, cited sources shown first with other retrieved passages folded away, timing / token / cost chips, and a *How this answer was produced* timeline (check question, search, write answer, check answer).
-- **Leave requests:** an approval card with the request details and the reviewer's notes; the request is saved only after **Approve**.
+- **Leave requests:** write them in everyday words ("book me two days off next Monday"); an approval card shows the details, the rule notes, the AI reviewer's cited notes and its recommendation; the request is saved only after **Approve**.
 - **Polish:** typing indicator, Enter to send (Shift+Enter for a new line), character counter, clear error messages (for example when the model's daily limit is reached), a phone layout with a slide-out menu, keyboard focus styles and reduced-motion support.
 
 It was exercised in a real browser against a real model: role switching, the approval flow, the attack example, the citation chips, the theme toggle, the phone menu and keyboard sending. Model text is always inserted as text nodes (never as HTML), which a test enforces. The role switch is a demo; use verified identity in production.
@@ -103,7 +104,21 @@ curl -s localhost:8000/agent -H "content-type: application/json" \
 # -> {"status":"pending_approval","thread_id":"...","approval":{...}}
 curl -s localhost:8000/agent/approve -H "content-type: application/json" \
      -d '{"thread_id":"<id from above>","approve":true}'
+
+# real token streaming (server-sent events: sources, token ..., done)
+curl -N "localhost:8000/stream?q=How+many+sick+days+do+I+get"
+# the website's endpoint: questions stream, leave requests arrive as one "agent" event
+curl -N localhost:8000/agent/stream -H "content-type: application/json" \
+     -d '{"message":"Please book me two days off next Monday","user":"asha"}'
 ```
+
+### How the AI parts work, and their safety nets
+
+* **Streaming:** `RAGPipeline.ask_stream` sends model tokens as they arrive. The output check needs the whole answer, so it runs at the end ("stream, then check"): the final `done` event carries the checked answer, and `replaced` is true when the check changed it (for example, no valid citation). Clients always show the checked answer last.
+* **AI router (function calling):** the model is given two tools, `answer_policy_question` and `request_leave`, and must call one. The leave details are its tool arguments, validated by Pydantic (`LeaveDraft`: 1-60 days, annual or sick, a date). A date written in the message wins over the model's, and a named weekday is recomputed in code (the 20b model picked a Saturday for "next Monday"). If the model can't call tools (offline), fails, picks an unknown tool or returns invalid arguments, the rule-based router takes over.
+* **AI reviewer:** a second agent reads the leave-policy passages and returns JSON notes plus a recommendation. Each note must cite a real passage or it is dropped; the fixed rule notes are always kept; on any failure only the rule notes are used.
+* **Still human-approved:** neither AI step can submit anything. `submit_leave_request` stays behind the approval gate.
+* `AGENT_AI=0` in `.env` switches the router and reviewer off (saves two model calls per leave request).
 
 ## Evaluation
 
@@ -180,7 +195,7 @@ Two real bugs were found this way and fixed: some models write citations as `【
 
 ## Deployment
 
-Note: the Docker image installs `requirements.txt` plus `sentence-transformers` (so `EMBEDDER=minilm` works; this makes the image large). Mind that `/stream` currently sends the finished answer word by word rather than streaming model tokens.
+Note: the Docker image installs `requirements.txt` plus `sentence-transformers` (so `EMBEDDER=minilm` works; this makes the image large).
 
 ```bash
 docker build -t policy-assistant .
@@ -191,7 +206,7 @@ docker compose up --build
 
 ## What was and was not verified
 
-Verified here: all 63 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push).
+Verified here: all 99 tests (retrieval modes, access control, guardrails, the LangGraph approval flow, the API, a LangChain chain with a fake chat model), the evaluation script (offline and with the real Groq model), the fine-tuning export, semantic search with `all-MiniLM-L6-v2`, a 27-check end-to-end run against a live server, and the GitHub Actions workflow (passed on the first push), and the streaming endpoints, AI router and AI reviewer against the real `gpt-oss-20b` model and in the website (questions streamed with the first token in under a second; "book me off sick for three days" and "two days off next Monday" became correct leave requests with cited reviewer notes).
 
 **Not run:** a real Qdrant server (the project uses Qdrant in memory), Docker / docker compose, the neural cross-encoder reranker, and the MCP server (it needs `pip install mcp` and a host). Test those in your environment before depending on them.
 

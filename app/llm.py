@@ -7,9 +7,11 @@
 """
 from __future__ import annotations
 
+import json
 import random
 import re
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
@@ -41,8 +43,27 @@ class LLMResult:
 
 class LLM(Protocol):
     name: str
+    supports_tools: bool
 
     def complete(self, messages: list[dict], max_tokens: int = 300) -> LLMResult: ...
+
+    def stream(self, messages: list[dict], usage: dict, max_tokens: int = 1000) -> Iterator[str]: ...
+
+    def call_tool(self, messages: list[dict], tools: list[dict]) -> tuple[str, dict] | None: ...
+
+    def complete_json(self, messages: list[dict], max_tokens: int = 600) -> dict: ...
+
+
+def parse_tool_call(message) -> tuple[str, dict] | None:
+    """The first tool call in a chat message as (name, arguments), or None if there is none or it is malformed."""
+    calls = getattr(message, "tool_calls", None) or []
+    if not calls:
+        return None
+    try:
+        args = json.loads(calls[0].function.arguments or "{}")
+    except (TypeError, ValueError):
+        return None
+    return (calls[0].function.name, args) if isinstance(args, dict) else None
 
 
 def call_with_retry(fn: Callable, retryable: tuple, max_attempts: int = 4, base_delay: float = 1.0,
@@ -58,6 +79,8 @@ def call_with_retry(fn: Callable, retryable: tuple, max_attempts: int = 4, base_
 
 
 class GroqLLM:
+    supports_tools = True
+
     def __init__(self, api_key: str, model: str):
         from groq import Groq
 
@@ -65,22 +88,47 @@ class GroqLLM:
         self.model = model
         self.client = Groq(api_key=api_key, max_retries=2, timeout=30.0)
 
-    def complete(self, messages: list[dict], max_tokens: int = 1000) -> LLMResult:
+    def _create(self, **kwargs):
         from groq import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
 
         retryable = (RateLimitError, APIConnectionError, APITimeoutError, InternalServerError)
         extra = {"reasoning_effort": "low"} if "gpt-oss" in self.model else {}   # reasoning models spend tokens thinking
-        resp = call_with_retry(
-            lambda: self.client.chat.completions.create(
-                model=self.model, messages=messages, temperature=0, max_completion_tokens=max_tokens, **extra),
-            retryable,
-        )
+        return call_with_retry(
+            lambda: self.client.chat.completions.create(model=self.model, temperature=0, **extra, **kwargs), retryable)
+
+    def complete(self, messages: list[dict], max_tokens: int = 1000) -> LLMResult:
+        resp = self._create(messages=messages, max_completion_tokens=max_tokens)
         usage = getattr(resp, "usage", None)
         return LLMResult(
             text=resp.choices[0].message.content or "",
             prompt_tokens=getattr(usage, "prompt_tokens", 0),
             completion_tokens=getattr(usage, "completion_tokens", 0),
         )
+
+    def stream(self, messages: list[dict], usage: dict, max_tokens: int = 1000) -> Iterator[str]:
+        """Real token streaming. Retries only cover opening the stream: once text has been sent it can't be taken back.
+        Token counts arrive with the last chunk and are written into ``usage``."""
+        chunks = self._create(messages=messages, max_completion_tokens=max_tokens, stream=True)
+        for chunk in chunks:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+            counted = getattr(chunk, "usage", None) or getattr(getattr(chunk, "x_groq", None), "usage", None)
+            if counted:
+                usage["prompt_tokens"] = getattr(counted, "prompt_tokens", 0)
+                usage["completion_tokens"] = getattr(counted, "completion_tokens", 0)
+
+    def call_tool(self, messages: list[dict], tools: list[dict]) -> tuple[str, dict] | None:
+        """Lets the model choose one of ``tools`` and fill in its arguments (function calling)."""
+        resp = self._create(messages=messages, tools=tools, tool_choice="required", max_completion_tokens=400)
+        return parse_tool_call(resp.choices[0].message)
+
+    def complete_json(self, messages: list[dict], max_tokens: int = 600) -> dict:
+        """JSON mode: the reply is guaranteed to be a JSON object, but its fields still need validating."""
+        resp = self._create(messages=messages, response_format={"type": "json_object"}, max_completion_tokens=max_tokens)
+        data = json.loads(resp.choices[0].message.content or "{}")
+        if not isinstance(data, dict):
+            raise ValueError("expected a JSON object")
+        return data
 
 
 _CTX_LINE = re.compile(r"^\[(\d+)\] \((.*?)\) (.*)$", re.M)
@@ -90,6 +138,19 @@ class FakeLLM:
     """Extractive offline stand-in: picks the context sentences that best match the question."""
 
     name = "fake-extractive"
+    supports_tools = False   # offline, the agent falls back to its rule-based router and reviewer
+
+    def stream(self, messages: list[dict], usage: dict, max_tokens: int = 300) -> Iterator[str]:
+        result = self.complete(messages, max_tokens)
+        usage.update(prompt_tokens=result.prompt_tokens, completion_tokens=result.completion_tokens)
+        for i, word in enumerate(result.text.split(" ")):
+            yield word if i == 0 else " " + word
+
+    def call_tool(self, messages: list[dict], tools: list[dict]) -> tuple[str, dict] | None:
+        return None
+
+    def complete_json(self, messages: list[dict], max_tokens: int = 600) -> dict:
+        raise NotImplementedError("FakeLLM has no JSON mode")
 
     def complete(self, messages: list[dict], max_tokens: int = 300) -> LLMResult:
         user = next(m["content"] for m in reversed(messages) if m["role"] == "user")
