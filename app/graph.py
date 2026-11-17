@@ -24,8 +24,8 @@ from .guardrails import REFUSAL, check_input
 from .tools import LeaveRequest, ToolRegistry
 
 ANNUAL_LIMIT, SICK_LIMIT, HR_THRESHOLD = 24, 10, 10
-_LEAVE_VERB = re.compile(r"\b(apply for|request|book|take|submit|raise|need)\b.*\bleave\b", re.I)
-_DAYS = re.compile(r"(\d+)\s*(?:working\s+|sick\s+|annual\s+|casual\s+|paid\s+)?days?", re.I)
+_LEAVE_VERB = re.compile(r"\b(apply for|request|book|take|submit|raise|need)\b.*\b(leave|sick days?|vacation days?|annual days?)\b", re.I)
+_DAYS = re.compile(r"(\d+)\s*(?:working\s+|sick\s+|annual\s+|casual\s+|paid\s+|vacation\s+)?days?", re.I)
 _ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 
@@ -85,7 +85,9 @@ def build_graph(pipeline, registry: ToolRegistry, checkpointer=None):
         return {}
 
     def classify(state: AgentState):
-        wants_leave = bool(_LEAVE_VERB.search(state["message"]) and _DAYS.search(state["message"]))
+        msg = state["message"]
+        # a message that ends with "?" is a question ("Do I need a certificate for 3 sick days?"), not a request
+        wants_leave = bool(_LEAVE_VERB.search(msg) and _DAYS.search(msg) and not msg.rstrip().endswith("?"))
         return {"intent": "leave_request" if wants_leave else "question"}
 
     def answer_question(state: AgentState):

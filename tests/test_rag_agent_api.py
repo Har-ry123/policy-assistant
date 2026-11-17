@@ -185,6 +185,37 @@ def test_leave_requests_with_a_word_between_the_number_and_days(agent, message, 
     assert out["approval"]["request"]["leave_type"] == kind
 
 
+@pytest.mark.parametrize("message,kind,days", [
+    ("Apply for 3 sick days", "sick", 3),
+    ("Please book 2 vacation days", "annual", 2),
+    ("I need 4 annual days", "annual", 4),
+])
+def test_leave_requests_without_the_word_leave(agent, message, kind, days):
+    graph, _ = agent
+    out = run_agent(graph, message, user="asha", thread_id="nl-" + message[:12])
+    assert out["status"] == "pending_approval"
+    assert out["approval"]["request"]["days"] == days
+    assert out["approval"]["request"]["leave_type"] == kind
+
+
+def test_too_many_sick_days_without_the_word_leave_is_rejected(agent):
+    graph, _ = agent
+    out = run_agent(graph, "Take 12 sick days", user="asha", thread_id="nl-12")
+    assert out["status"] == "invalid_request"
+    assert "entitlement" in out["answer"]
+
+
+@pytest.mark.parametrize("message", [
+    "Do I need a medical certificate for 3 sick days?",
+    "Can I take 3 days of leave?",
+    "How many sick days can I take?",
+])
+def test_questions_about_leave_are_not_requests(agent, message):
+    graph, _ = agent
+    out = run_agent(graph, message, thread_id="qq-" + message[:10])
+    assert out["status"] == "answered"
+
+
 def test_questions_with_numbers_are_still_questions(agent):
     graph, _ = agent
     out = run_agent(graph, "How many days of sick leave do I get?", thread_id="q-days")
