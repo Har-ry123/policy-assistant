@@ -37,7 +37,7 @@ It is the capstone for the AI Engineering Study Handbook: every week of the cour
 | 6 | LangChain, LangGraph, multi-agent, MCP | `app/langchain_rag.py` (LCEL chain), `app/graph.py` (state, nodes, conditional edges, `interrupt` + checkpointer, reviewer agent), `app/mcp_server.py` |
 | 7 | observability, guardrails, security | `app/tracing.py`, `app/guardrails.py`, access control in `app/retrieval.py`, `tests/test_guardrails_security.py` |
 | 8 | prompt caching, cost, deployment, fine-tuning, capstone | stable prompt prefix in `app/rag.py`; `app/api.py`, `Dockerfile`, `docker-compose.yml`; `eval/finetune_export.py`; this project |
-| Bonus | interview, resume | `docs/INTERVIEW.md`, `docs/RESUME.md` |
+
 
 ## Quick start (works offline, no keys)
 
@@ -197,7 +197,6 @@ Verified here: all 63 tests (retrieval modes, access control, guardrails, the La
 
 ## Limitations and next steps
 
-* Wild-question test (about 110 odd questions: typos, slang, other languages, attacks, role spoofing, off-topic, vague follow-ups): no restricted text leaked. It found and fixed five problems: misspellings, a wrong answer to a French question, prompt-leak requests, a cold reply to a self-harm message, and a wrong Diwali answer (the holiday file now names each holiday). About 30 questions of that set were not run because the free Groq quota ran out, and the fixes after that point (synonym search, summarising broad questions) were checked on retrieval only, not re-answered by the model.
 * Answers can differ between models: for example "Can I work from Bali for a month?" is answered by `gpt-oss-120b` but refused by `gpt-oss-20b`. Refusing is the safe direction; a few answers (for example whether a coffee can be expensed) go slightly beyond what the policy says.
 
 * Small corpus (20 documents, 71 questions): good for comparing methods, not for claiming production accuracy. Add real documents and more adversarial questions.
